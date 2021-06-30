@@ -4,11 +4,12 @@ import time
 from polyglot.text import Text, Word
 import ucto
 import os
-
+import matplotlib.pyplot as plt
 import IPython
+import collections
 
 
-from morphism_encoder_merge_lettergreep import Encoder
+
 import pickle
 import numpy as np
 import pandas as pd
@@ -16,8 +17,102 @@ from sklearn.model_selection import train_test_split
 from frog import Frog, FrogOptions
 from numpy import asarray, savetxt, loadtxt
 from string import punctuation
+import glob
 
 ########################################
+
+
+########## VARIABLES ##########
+
+fixed_len = 20
+split_frac = 0.9 #splitting fraction between TRAIN and TEST data
+
+#from morphism_encoder import Encoder
+from morphism_encoder import Encoder
+
+### Nothing_Special
+#from morphism_encoder_merge_lettergreep import Encoder
+
+################ IMPORT LETTERGREPEN DATA #########################
+
+# data = pd.read_csv("TrainFiles/lettergrepen_1.csv")
+# data2 = pd.read_csv("TrainFiles/lettergrepen_2.csv")
+# data3 = pd.read_csv("TrainFiles/lettergrepen_3.csv")
+# data4 = pd.read_csv("TrainFiles/lettergrepen_4.csv")
+# data5 = pd.read_csv("TrainFiles/lettergrepen_4,5.csv")
+#
+#
+#
+# print(data["woorden"])
+# print(data["lettergrepen"])
+# print(data["aantal lettergrepen"])
+#
+# lettergreep_words = list(data["woorden"])
+# lettergreep_splits = list(data["lettergrepen"])
+# lettergreep_labels = list(data["aantal lettergrepen"])
+#
+# lettergreep_words2 = list(data2["woorden"])
+# lettergreep_splits2 = list(data2["lettergrepen"])
+# lettergreep_labels2 = list(data2["aantal lettergrepen"])
+#
+# lettergreep_words3 = list(data3["woorden"])
+# lettergreep_splits3 = list(data3["lettergrepen"])
+# lettergreep_labels3 = list(data3["aantal lettergrepen"])
+#
+# lettergreep_words4 = list(data4["woorden"])
+# lettergreep_splits4 = list(data4["lettergrepen"])
+# lettergreep_labels4 = list(data4["aantal lettergrepen"])
+#
+# lettergreep_words5 = list(data5["woorden"])
+# lettergreep_splits5 = list(data5["lettergrepen"])
+# lettergreep_labels5 = list(data5["aantal lettergrepen"])
+#
+#
+# lettergreep_words = lettergreep_words + lettergreep_words2 + lettergreep_words3 + lettergreep_words4 + lettergreep_words5
+# lettergreep_splits = lettergreep_splits + lettergreep_splits2 + lettergreep_splits3 + lettergreep_splits4 + lettergreep_splits5
+# lettergreep_labels = lettergreep_labels + lettergreep_labels2 + lettergreep_labels3 + lettergreep_labels4 + lettergreep_labels5
+
+data = pd.read_csv("TrainFiles/lettergrepen_Official3.csv")
+lettergreep_words = list(data["woorden"])
+lettergreep_splits = list(data["lettergrepen"])
+lettergreep_labels = list(data["aantal lettergrepen"])
+
+len_dataset = len(lettergreep_words)
+
+### Ree "#Name?" words..
+for i in range(len_dataset):
+    if i < len(lettergreep_words):
+        if lettergreep_words[i] == "#NAME?":
+            print("ok")
+            lettergreep_words.pop(i)
+            lettergreep_labels.pop(i)
+            lettergreep_splits.pop(i)
+
+len_dataset = len(lettergreep_words)
+print(len_dataset)
+print(len(lettergreep_splits))
+print(len(lettergreep_labels))
+
+
+lettergreep_train_words = lettergreep_words[0:int(split_frac*len_dataset)]
+lettergreep_train_labels = lettergreep_labels[0:int(split_frac*len_dataset)]
+
+lettergreep_test_words = lettergreep_words[int(split_frac*len_dataset):]
+lettergreep_test_labels = lettergreep_labels[int(split_frac*len_dataset):]
+
+#IPython ; IPython.embed() ; exit(1)
+
+print("Number of train examples")
+print(len(lettergreep_train_words))
+print("")
+print("Number of test examples")
+print(len(lettergreep_test_words))
+#########################################
+
+print("Duplicates: ")
+print([item for item, count in collections.Counter(lettergreep_words).items()if count >1])
+
+
 
 ########## HELPER FUNCTIONS ############
 
@@ -33,13 +128,19 @@ def format_time(elapsed):
   # Format as hh:mm:ss
   return str(datetime.timedelta(seconds=elapsed_rounded))
 
+## Taken from https://stackoverflow.com/questions/5920643/add-an-item-between-each-item-already-in-the-list
+def intersperse(lst, item):
+    result = [item] * (len(lst) * 2 - 1)
+    result[0::2] = lst
+    return result
+
+print("TESTESSTTTT")
+print(intersperse(["mee","speel","en","de"],"__ADD_MERGE__"))
+print(intersperse(["ik"],"__ADD_MERGE__"))
 
 
-#Deleting of \n in reviews, maybe can use for sentence tag putting.
-#Misschien wel goed zo, maar als je vergelijkt met word-tokenization misschien ook verwijderen in de google colab
-
-def change_text_to_morphs(sentences):
-    # sentence List to sentence list in morphism form
+def change_text_to_morphs(sentences, frog_merge = False,  save = False, filename=None):
+    # sentence list to sentence list in frog morphism form
     morphSentences = []
 
     frog = Frog(
@@ -57,6 +158,9 @@ def change_text_to_morphs(sentences):
         for i in range(0,len(output)):
             morphisms_word = output[i].get("morph")
             morphisms_word_list = morphisms_word.replace('[', '').split(']')
+            if frog_merge:
+                morphisms_word = list(filter(None, morphisms_word_list))
+                morphisms_word_list = intersperse(morphisms_word_list, "insertmergetoken")
             #print("EVET")
             #print(morphisms_word_list)
             morphSentence += morphisms_word_list
@@ -67,13 +171,75 @@ def change_text_to_morphs(sentences):
         morphSentence = ' '.join(morphSentence)
         #print("HERE")
         #print(morphSentence)
-        morphSentences += [morphSentence]
+        morphSentences.append(morphSentence)
 
-    #with open('MorphedTestReviews.pickle', 'wb') as outputfile:
-    #    pickle.dump(morphSentences, outputfile)
+    if save is True:
+        with open(filename, 'wb') as outputfile:
+            pickle.dump(morphSentences, outputfile)
     return morphSentences
 
-##########################################################
+def change_text_to_lemma_POS(sentences,  save = False, filename=None):
+    # sentence list to sentence list in frog lemma + pos
+    lemmapos_sentences = []
+
+    frog = Frog(FrogOptions(tok=True, lemma=True, morph=False, daringmorph=False, mwu=False, chunking=False, ner=False,
+                            parser=False))
+
+    for sentenceNumber in range(0, len(sentences)):
+        print(sentenceNumber)
+        print("of")
+        print(len(sentences))
+        sentenceToBeProcessed = sentences[sentenceNumber]
+        #sentenceToBeProcessed = sentenceToBeProcessed.replace("\n", " ")
+
+        output = frog.process(sentenceToBeProcessed)
+        lemmapos_sentence = ""
+        for i in range(0,len(output)):
+            pos = str(output[i].get("pos"))
+            lemma = str(output[i].get("lemma"))
+            #posprob = str(output[i].get("posprob"))
+            #print(posprob)
+
+            # print("pos:      " + pos)
+            # print("lemma:    " + lemma)
+
+            pos = "<" + pos
+            pos = pos.replace("(", "><")
+            pos = pos.replace(")", ">")
+            pos = pos.replace(",", "><")
+            pos = pos.replace("<>", "")
+
+            # print(pos)
+
+            lemmapos_word = lemma + " " + pos
+
+            #word = str(output[i].get("text"))
+            #print(f"{word}: {lemmapos_word}")
+
+            lemmapos_sentence = lemmapos_sentence + " " + lemmapos_word
+
+        # Remove the first empty string
+        #print(lemmapos_sentence)
+
+        lemmapos_sentence = lemmapos_sentence[1:]
+        #print("")
+        #print("")
+        #print("")
+        #print("")
+        #print(lemmapos_sentence)
+        #print("")
+        #print("")
+        #print("")
+        #print("")
+        lemmapos_sentences.append(lemmapos_sentence)
+        #print("")
+        #print(lemmapos_sentences)
+        #print("")
+
+    if save is True:
+        with open(filename, 'wb') as outputfile:
+            pickle.dump(lemmapos_sentences, outputfile)
+    return lemmapos_sentences
 
 configurationFile = "tokconfig-nld"
 tokenizer = ucto.Tokenizer(configurationFile)
@@ -90,11 +256,12 @@ def ucto_tokenize(sentence):
 #    #List of str to List of str (morfemes)
 
 #    os.system("morfessor -t " + str(train_file) + " -S model.segm -T " + str(convert_file))
-#     os.system("morfessor -t EenPosReview.txt -S model.segm -T EenPosReview.txt")
+#    os.system("morfessor -t EenPosReview.txt -S model.segm -T EenPosReview.txt -o outputSelfMorf.txt ")
 
 # print("here")
 # convertToSelfTrainedMorf([],"EenPosReview.txt","EenPosReview.txt")
 # print("now here")
+
 def convertToPolyglotMorf(sentences, save = False):
     #List of str to List of str (morfemes)
 
@@ -115,54 +282,22 @@ def convertToPolyglotMorf(sentences, save = False):
       morfed_sentences += morfed_sentence
       i+=1
 
-      morfed_sentences_text = '*%*%'.join(morfed_sentences)
+    morfed_sentences_text = '*%'.join(morfed_sentences)
 
     if save is True:
 
-        with open("convertedPolyglotMorfText.txt", "w") as text_file:
+        with open("TrainFiles/convertedPolyglotMorfText.txt", "w") as text_file:
             text_file.write(morfed_sentences_text)
 
     return morfed_sentences
 
 
-########## VARIABLES ##########
-
-fixed_len = 25
-split_frac = 0.9 #splitting fraction between TRAIN and TEST data
-
-
-#########################################
-
-data = pd.read_csv("lettergrepen_1.csv")
-
-print(data["woorden"])
-print(data["lettergrepen"])
-print(data["aantal lettergrepen"])
-
-lettergreep_words = list(data["woorden"])
-lettergreep_splits = list(data["lettergrepen"])
-lettergreep_labels = list(data["aantal lettergrepen"])
-
-
-
-
-len_dataset = len(lettergreep_words)
-
-lettergreep_train_words = lettergreep_words[0:int(split_frac*len_dataset)]
-lettergreep_train_labels = lettergreep_labels[0:int(split_frac*len_dataset)]
-
-lettergreep_test_words = lettergreep_words[int(split_frac*len_dataset):]
-lettergreep_test_labels = lettergreep_labels[int(split_frac*len_dataset):]
-
-#IPython ; IPython.embed() ; exit(1)
-
-
-
-
 
 ########## LOAD AND SHUFFLE DATA, CREATE LABELS ##########
 
-### Read Shuffled data and labels ###
+
+
+### LOADING SHUFFLED TRAIN TEST DATA ###
 
 print("loadedStart")
 
@@ -189,66 +324,11 @@ with open('testLabelListShuffled.data', 'rb') as filehandle:
       testLabelList = pickle.load(filehandle)
 
 print("loadedddd")
-#
-# with open('MorphedTrainReviews.pickle', 'rb') as inputfile:
-#     MorphedTrainReviewsList = pickle.load(inputfile)
-#
-# print("loadeddddd")
-#
-# with open('MorphedTestReviews.pickle', 'rb') as inputfile:
-#     MorphedTestReviewsList = pickle.load(inputfile)
-#
-# print("loadedddddd")
-#
-# with open('all_text2_morf_NLTK.pickle', 'rb') as inputfile:
-#     all_text2_morf_NLTK = pickle.load(inputfile)
-#
-# a_list_of_all_text2_morf_NLTK = [all_text2_morf_NLTK]
-
-# print("loadeddddddd")
-
-# with open('total_review_morf_list_text.pickle', 'rb') as inputfile:
-#     MorfedUctoTrainReviewsText = pickle.load(inputfile)
-#     MorfedUctoTrainReviewsList = MorfedUctoTrainReviewsText.split("*$*$*$*$")
-
-# print("loadedddddddd")
-
-#UctoOpen = open('UctoMorfessorSelfTrained.txt','r')
-#SelfTrainedMorfedUctoTrainReviewsList = UctoOpen.read()
-#SelfTrainedMorfedUctoTrainReviewsList = [SelfTrainedMorfedUctoTrainReviewsList]
-
-#with open('total_review_word_list_text.pickle', 'rb') as inputfile:
-#    WordUctoTrainReviewsText = pickle.load(inputfile)
-#    WordUctoTrainReviewsList = WordUctoTrainReviewsText.split("*$*$*$*$")
-
-#print("loadeddddddddd")
-
-#with open('total_review_morf_list_text.pickle', 'wb') as outputfile:
-#  pickle.dump(total_review_morf_list_text, outputfile)
-
-########## EXTRA EXPERIMENTING DATA ########
-
-#with open('PosTestData.data', 'rb') as filehandle:
-#    # read the data as binary data stream
-#    PosTestCorpusList = pickle.load(filehandle)
-
-#ShorterCorpusList = PosTestCorpusList[:100]
-#short_text = ' '.join(ShorterCorpusList)
-#pos_test_text = ' '.join(PosTestCorpusList)
-
-###########
-
-#print("CHECKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK")
-#print(totTrainList[:10])
-
-#print("WHATTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT")
-#print(MorphedTrainReviewsList[:10])
-########## TRAIN TOKENIZER ##########
-
-#all_text2 = ' '.join(totTrainList)
-#morphSentences = change_text_to_morphs(totTestList)
-
 print("LOADED")
+
+
+
+### CLEANING TRAINLIST TESTLIST ###
 
 totTrainList_Cleaned = []
 for i in range(0,len(totTrainList)):
@@ -261,15 +341,71 @@ for i in range(0,len(totTestList)):
     totTestList_Cleaned += [cleaned_review]
 
 
+
+### LOADING POLYGLOT MORFESSOR FILE ###
+
+### Save new file
 #morfed_totTrainList = convertToPolyglotMorf(totTrainList_Cleaned, save=True)
 
-#with open('convertedPolyglotMorf.pickle', 'rb') as inputfile:
-#    morfed_totTrainList = pickle.load(inputfile)
+Open = open('TrainFiles/convertedPolyglotMorfText.txt','r')
+morfed_totTrainList = Open.read()
+morfed_totTrainList = morfed_totTrainList.split('*%')
+print("-----------------------------")
+print(morfed_totTrainList[:100])
+print("-----------------------------")
 
-#Open = open('covertedPolyglotMorfText.txt','r')
-#morfed_totTrainList = Open.read()
-#morfed_totTrainList = morfed_totTrainList.split('*%*%')
-#print(morfed_totTrainList[:100])
+### LOADING SELF-TRAINED MORFESSOR FILE ###
+
+Open = open('TrainFiles/SelfMorfedTrainReviewsUnedited.txt','r')
+SelfMorfed_totTrainListUnedited = Open.read()
+SelfMorfed_totTrainListUnedited = SelfMorfed_totTrainListUnedited.split("\n")
+SelfMorfed_totTrainList = []
+for element in SelfMorfed_totTrainListUnedited:
+    SelfMorfed_totTrainList += element.split(" ")
+
+print("-----------------------------")
+print(SelfMorfed_totTrainList[:100])
+print("-----------------------------")
+
+
+
+###########################################
+### FROG FROG FROG IMPORT IMPORT IMPORT ###
+###########################################
+
+### LOADING FROG LEMMA POS TRAIN REVIEW FILE ###
+
+
+#! PROBABLY NO NEED BECAUSE DONT HAVE SENTENCES FOR POS TAGS AT LETTERGREEP
+
+
+
+
+#FrogLemmaPosTrainLettergreepSeperate = change_text_to_lemma_POS(lettergreep_train_words,  save = True, filename = 'TrainFiles/FrogLemmaPosTrainLettergreepSeperate.pickle')
+
+#with open('TrainFiles/FrogLemmaPosTrainLettergreepSeperate.pickle', 'rb') as inputfile:
+#    FrogLemmaPosTrainLettergreepSeperate = pickle.load(inputfile)
+
+with open('TrainFiles/FrogLemmaPosTrainReviewsSeperate.pickle', 'rb') as inputfile:
+    FrogLemmaPosTrainReviewsSeperate = pickle.load(inputfile)
+
+
+# print("Before First")
+# print("")
+# print(FrogLemmaPosTrainLettergreepSeperate[:10])
+
+print("First")
+print("")
+print(FrogLemmaPosTrainReviewsSeperate[:10])
+
+#FrogLemmaPosTestLettergreepSeperate = change_text_to_lemma_POS(totTestList_Cleaned,  save = True, filename = 'TrainFiles/FrogLemmaPosTestLettergreepSeperate.pickle')
+
+#with open('TrainFiles/FrogLemmaPosTestLettergreepSeperate.pickle', 'rb') as inputfile:
+#    FrogLemmaPosTestLettergreepSeperate = pickle.load(inputfile)
+
+# print("Second")
+# print("")
+# print(FrogLemmaPosTestLettergreepSeperate[:5])
 
 
 
@@ -277,26 +413,45 @@ for i in range(0,len(totTestList)):
 
 
 
-#print(totTrainList_Cleaned[:3])
-#print(totTrainList[:3])
-#print(len(totTrainList))
-#print(len(totTrainList_Cleaned))
+### LOADING FROG MORPHISM TRAIN REVIEW FILE ###
 
-#MorphedTrainReviewsText = ' '.join(MorphedTrainReviewsList)
-#print(MorphedTrainReviewsText[:100])
+#FrogMorphed_totTrainList = change_text_to_morphs(totTrainList_Cleaned,  save = True)
+with open('TrainFiles/FrogMorphedTrainReviews.pickle', 'rb') as inputfile:
+    FrogMorphedTrainReviews = pickle.load(inputfile)
+
+#FrogMorphed_totTestList = change_text_to_morphs(totTestList_Cleaned,  save = True, filename = 'TrainFiles/FrogMorphedTestReviews.pickle')
+with open('TrainFiles/FrogMorphedTestReviews.pickle', 'rb') as inputfile:
+    FrogMorphedTestReviews = pickle.load(inputfile)
+
+print("-----------------------------")
+print(FrogMorphedTrainReviews[:100])
+print("-----------------------------")
+
+
+
+
+### LOADING FROG MORPHISM TRAIN TEST LETTERGREEP FILES ###
+
+#FrogMorphedTrainLettergreep = change_text_to_morphs(lettergreep_train_words,  save = True, filename = 'TrainFiles/FrogMorphedTrainLettergreep.pickle')
+with open('TrainFiles/FrogMorphedTrainLettergreep.pickle', 'rb') as inputfile:
+    FrogMorphedTrainLettergreep = pickle.load(inputfile)
+
+#FrogMorphedTestLettergreep = change_text_to_morphs(lettergreep_test_words,  save = True, filename = 'TrainFiles/FrogMorphedTestLettergreep.pickle')
+with open('TrainFiles/FrogMorphedTestLettergreep.pickle', 'rb') as inputfile:
+    FrogMorphedTestLettergreep = pickle.load(inputfile)
+
+
+print("-----------------------------")
+#print(FrogMorphed_totTrainList[:100])
+print("-----------------------------")
+
 
 print("LOADEDD")
 
-#print("MORPHED")
-#print("MORPHED")
-#print("MORPHED")
-#print("MORPHED")
-#print("MORPHED")
-#print(MorfedUctoTrainReviewsList[1:70])
 
 #5000: 0.00041
 
-encoder = Encoder(5000, pct_bpe=1, ngram_max=50)  ### params random still!
+encoder = Encoder(30000, pct_bpe=0.001, ngram_max=50)  ### params random still!
 ###Split by spaces (already ucto'd)
 #encoder.fit(MorphedTrainReviewsList)
 #encoder.fit(a_list_of_all_text2_morf_NLTK)
@@ -307,11 +462,19 @@ encoder = Encoder(5000, pct_bpe=1, ngram_max=50)  ### params random still!
 ###Split by spaces (already ucto'd) #CHANGE LINE IN MORPHISM ENCODER IF WORD TOKENIZATION ONLY
 #encoder.fit(WordUctoTrainReviewsList)
 
-### Polyglot Morf
-encoder.fit(morfed_totTrainList)
-### TotTrainList_cleaned
-#encoder.fit(totTrainList_Cleaned)
-### Lettergrepen
+
+### Frog Morph                                   Whitespace..Whitespace
+#encoder.fit(FrogMorphedTrainReviews)
+### Polyglot Morf                                Ucto..Whitespace
+#encoder.fit(morfed_totTrainList)
+### Selftrained Morf                             Ucto..Whitespace
+#encoder.fit(SelfMorfed_totTrainList)
+### TotTrainList_cleaned FOR BPE AND WORD        Ucto..Ucto          WORD: update file
+encoder.fit(totTrainList_Cleaned)
+
+
+
+### Lettergrepen                                 Ucto..Ucto
 #encoder.fit(lettergreep_train_words)
 
 print("finished fit")
@@ -324,28 +487,37 @@ print("finished fit")
 
 ### Encode the train reviews (create features) ###
 
+###For length purposes only:
+for_length_words_int = []
+
 print("Encoding train wiki-words")
+
+#train_words_int = np.zeros((len(FrogMorphedTrainLettergreep), fixed_len), dtype = int)
 train_words_int = np.zeros((len(lettergreep_train_words), fixed_len), dtype = int)
 i = 0
 
 for word in lettergreep_train_words:
-    train_word_int = encoder.transform(word, fixed_length = fixed_len)
+    train_word_int, train_word_int_without_padding = encoder.transform(word, fixed_length = fixed_len)
     train_words_int[i,:] = np.array(train_word_int)
     if i % 100 == 0:
         print("wiki-word encoded: " + str(i))
     i += 1
-
+    ###For length purposes only:
+    for_length_words_int.append(train_word_int_without_padding)
 
 ### Encode the test reviews (create features) ###
 
 print("Encoding test wiki-words")
+#test_words_int = np.zeros((len(FrogMorphedTestLettergreep), fixed_len), dtype = int)
 test_words_int = np.zeros((len(lettergreep_test_words), fixed_len), dtype = int)
 i = 0
 
 for word in lettergreep_test_words:
-    test_word_int = encoder.transform(word, fixed_length = fixed_len)
+    test_word_int, test_word_int_without_padding = encoder.transform(word, fixed_length = fixed_len)
     test_words_int[i,:] = np.array(test_word_int)
     i += 1
+    ###For length purposes only:
+    for_length_words_int.append(test_word_int_without_padding)
 
 ### Adjust label lists to Arrays ###
 
@@ -365,10 +537,10 @@ len_test_features = len(test_features)
 
 ### Save features ###
 
-np.save('LETTERGREEPTrainFeatures1000_5000.npy',train_features)
-np.save('LETTERGREEPTestFeatures1000_5000.npy',test_features)
-np.save('LETTERGREEPTrainLabels1000_5000.npy',train_labels)
-np.save('LETTERGREEPTestLabels1000_5000.npy',test_labels)
+np.save('LETTERGREEP_NoMERGE_WORD_TrainFeatures_30000.npy',train_features)
+np.save('LETTERGREEP_NoMERGE_WORD_TestFeatures_30000.npy',test_features)
+np.save('LETTERGREEP_NoMERGE_WORD_TrainLabels_30000.npy',train_labels)
+np.save('LETTERGREEP_NoMERGE_WORD_TestLabels_30000.npy',test_labels)
 
 print("okay")
 print(encoder.bpe_vocab_size)
@@ -386,6 +558,23 @@ print(encoder.word_vocab)
 print("")
 print("HIGHEST VOCAB iNDEX IS")
 print(max(list(encoder.bpe_vocab.values())))
+
+
+############## SHOWING SEQUENCE LENGTHS ########################
+
+print("Calculating train sequence lengths")
+
+### Calculate and show lengths of reviews...
+
+words_len = [len(x) for x in for_length_words_int]
+pd.Series(words_len).hist()
+pd.Series(words_len).describe().to_csv("InfoDatasetLettergreep/30000-NoMerge-Word.csv")
+print(pd.Series(words_len).describe())
+plt.xlabel = "Review Length"
+plt.ylabel = "Amount of reviews"
+#plt.legend()
+plt.savefig("InfoDatasetLettergreep/30000-NoMerge-Word.png",format='png')
+
 
 
 
@@ -407,10 +596,10 @@ tokenized = encoder.tokenize(nederlandseZin)
 tokenized2 = encoder.tokenize(nederlandseZin2)
 tokenized3 = encoder.tokenize(nederlandseZin3)
 tokenized4 = encoder.tokenize(nederlandseZin4)
-Ids = encoder.transform(nederlandseZin)
-Ids2 = encoder.transform(nederlandseZin2)
-Ids3 = encoder.transform(nederlandseZin3)
-Ids4 = encoder.transform(nederlandseZin4)
+Ids,_ = encoder.transform(nederlandseZin)
+Ids2,_ = encoder.transform(nederlandseZin2)
+Ids3,_ = encoder.transform(nederlandseZin3)
+Ids4,_ = encoder.transform(nederlandseZin4)
 #twitterIds = encoder.transform(test_twitterReview_neg)
 
 
@@ -516,6 +705,8 @@ print(format_time(time.time() - start_time))
 # np.save('test_review1.npy',features)
 # np.save('test_review2.npy',features2)
 
+for word in lettergreep_test_words[:3]:
+    print(encoder.tokenize(word))
 print(train_labels)
 print(train_features)
 max_len = 0
@@ -549,7 +740,6 @@ for i in test_features:
 
     if max_len < length_nonzero:
         max_len = length_nonzero
-
 
 
 print(str(max_len) + " MAX TEST LENGTH")
